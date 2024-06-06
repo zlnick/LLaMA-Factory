@@ -2,7 +2,7 @@
 Author: Lin Zhu
 Date: 2024-06-06 20:16:07
 LastEditors: Lin Zhu
-LastEditTime: 2024-06-06 21:17:41
+LastEditTime: 2024-06-06 21:59:23
 Description: 
 FilePath: \LLaMA-Factory\data\CHIP-CDEE\TrainDataGen.py
 '''
@@ -143,7 +143,7 @@ for i in range(len(data)):
     human["value"] = text
     gpt={}
     gpt["from"] = "gpt"
-    gpt["value"] = event
+    gpt["value"] = json.dumps(event, ensure_ascii=False, indent=4)
     conversationItem.append(human)
     conversationItem.append(gpt)
     
