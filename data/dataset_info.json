@@ -1,4 +1,12 @@
 {
+  "chatglm3trainning": {
+    "file_name": "chatglm3trainning.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "conversations",
+      "system": "system"
+    }
+  },
   "identity": {
     "file_name": "identity.json"
   },
