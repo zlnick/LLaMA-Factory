@@ -1,9 +1,11 @@
 {
   "chatglm3trainning": {
     "file_name": "chatglm3trainning.json",
-    "formatting": "sharegpt",
+    "formatting": "alpaca",
     "columns": {
-      "messages": "conversations",
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output",
       "system": "system"
     }
   },
