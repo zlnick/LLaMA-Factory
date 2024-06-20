@@ -1,3 +1,17 @@
+# Copyright 2024 the LlamaFactory team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import json
 import os
 from collections import defaultdict
@@ -39,7 +53,11 @@ def get_save_dir(*paths: str) -> os.PathLike:
     r"""
     Gets the path to saved model checkpoints.
     """
-    paths = (path.replace(os.path.sep, "").replace(" ", "").strip() for path in paths)
+    if os.path.sep in paths[-1]:
+        logger.warning("Found complex path, some features may be not available.")
+        return paths[-1]
+
+    paths = (path.replace(" ", "").strip() for path in paths)
     return os.path.join(DEFAULT_SAVE_DIR, *paths)
 
 
@@ -48,13 +66,6 @@ def get_config_path() -> os.PathLike:
     Gets the path to user config.
     """
     return os.path.join(DEFAULT_CACHE_DIR, USER_CONFIG)
-
-
-def get_arg_save_path(config_path: str) -> os.PathLike:
-    r"""
-    Gets the path to saved arguments.
-    """
-    return os.path.join(DEFAULT_CONFIG_DIR, config_path)
 
 
 def load_config() -> Dict[str, Any]:
@@ -77,24 +88,28 @@ def save_config(lang: str, model_name: Optional[str] = None, model_path: Optiona
     user_config["lang"] = lang or user_config["lang"]
     if model_name:
         user_config["last_model"] = model_name
+
+    if model_name and model_path:
         user_config["path_dict"][model_name] = model_path
+
     with open(get_config_path(), "w", encoding="utf-8") as f:
         safe_dump(user_config, f)
 
 
-def get_model_path(model_name: str) -> Optional[str]:
+def get_model_path(model_name: str) -> str:
     r"""
     Gets the model path according to the model name.
     """
     user_config = load_config()
-    path_dict: Dict[DownloadSource, str] = SUPPORTED_MODELS.get(model_name, defaultdict(str))
-    model_path = user_config["path_dict"].get(model_name, None) or path_dict.get(DownloadSource.DEFAULT, None)
+    path_dict: Dict["DownloadSource", str] = SUPPORTED_MODELS.get(model_name, defaultdict(str))
+    model_path = user_config["path_dict"].get(model_name, "") or path_dict.get(DownloadSource.DEFAULT, "")
     if (
         use_modelscope()
         and path_dict.get(DownloadSource.MODELSCOPE)
         and model_path == path_dict.get(DownloadSource.DEFAULT)
     ):  # replace path
         model_path = path_dict.get(DownloadSource.MODELSCOPE)
+
     return model_path
 
 

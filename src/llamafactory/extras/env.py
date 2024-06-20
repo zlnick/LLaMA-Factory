@@ -1,3 +1,17 @@
+# Copyright 2024 the LlamaFactory team.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import platform
 
 import accelerate
@@ -6,13 +20,10 @@ import peft
 import torch
 import transformers
 import trl
-from transformers.integrations import is_deepspeed_available
-from transformers.utils import is_bitsandbytes_available, is_torch_cuda_available, is_torch_npu_available
-
-from .packages import is_vllm_available
+from transformers.utils import is_torch_cuda_available, is_torch_npu_available
 
 
-VERSION = "0.7.2.dev0"
+VERSION = "0.8.3.dev0"
 
 
 def print_env() -> None:
@@ -37,19 +48,25 @@ def print_env() -> None:
         info["NPU type"] = torch.npu.get_device_name()
         info["CANN version"] = torch.version.cann
 
-    if is_deepspeed_available():
+    try:
         import deepspeed  # type: ignore
 
         info["DeepSpeed version"] = deepspeed.__version__
+    except Exception:
+        pass
 
-    if is_bitsandbytes_available():
+    try:
         import bitsandbytes
 
         info["Bitsandbytes version"] = bitsandbytes.__version__
+    except Exception:
+        pass
 
-    if is_vllm_available():
+    try:
         import vllm
 
         info["vLLM version"] = vllm.__version__
+    except Exception:
+        pass
 
     print("\n" + "\n".join(["- {}: {}".format(key, value) for key, value in info.items()]) + "\n")
