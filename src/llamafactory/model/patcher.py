@@ -29,14 +29,21 @@ from .model_utils.checkpointing import prepare_model_for_training
 from .model_utils.embedding import resize_embedding_layer
 from .model_utils.longlora import configure_longlora
 from .model_utils.moe import add_z3_leaf_module, configure_moe
+from .model_utils.packing import configure_packing
 from .model_utils.quantization import configure_quantization
 from .model_utils.rope import configure_rope
 from .model_utils.valuehead import prepare_valuehead_model
-from .model_utils.visual import autocast_projector_dtype, configure_visual_model
+from .model_utils.visual import (
+    autocast_projector_dtype,
+    configure_visual_model,
+    get_image_seqlen,
+    get_patch_size,
+    get_vision_feature_select_strategy,
+)
 
 
 if TYPE_CHECKING:
-    from transformers import PretrainedConfig, PreTrainedTokenizer
+    from transformers import PretrainedConfig, PreTrainedTokenizer, ProcessorMixin
     from trl import AutoModelForCausalLMWithValueHead
 
     from ..hparams import ModelArguments
@@ -50,6 +57,22 @@ def patch_tokenizer(tokenizer: "PreTrainedTokenizer") -> None:
         tokenizer._pad = MethodType(PreTrainedTokenizerBase._pad, tokenizer)
 
 
+def patch_processor(
+    processor: "ProcessorMixin",
+    config: "PretrainedConfig",
+    tokenizer: "PreTrainedTokenizer",
+    model_args: "ModelArguments",
+) -> None:
+    setattr(processor, "tokenizer", tokenizer)
+    setattr(processor, "image_seqlen", get_image_seqlen(config))
+    setattr(processor, "image_resolution", model_args.image_resolution)
+    setattr(processor, "patch_size", get_patch_size(config))
+    setattr(processor, "video_resolution", model_args.video_resolution)
+    setattr(processor, "video_fps", model_args.video_fps)
+    setattr(processor, "video_maxlen", model_args.video_maxlen)
+    setattr(processor, "vision_feature_select_strategy", get_vision_feature_select_strategy(config))
+
+
 def patch_config(
     config: "PretrainedConfig",
     tokenizer: "PreTrainedTokenizer",
@@ -58,21 +81,22 @@ def patch_config(
     is_trainable: bool,
 ) -> None:
     if model_args.compute_dtype is None:  # priority: bf16 > fp16 > fp32
-        if model_args.infer_dtype == "auto":
-            model_args.compute_dtype = infer_optim_dtype(model_dtype=getattr(config, "torch_dtype", None))
-        else:
+        if model_args.infer_dtype != "auto" and not is_trainable:
             model_args.compute_dtype = getattr(torch, model_args.infer_dtype)
+        else:
+            model_args.compute_dtype = infer_optim_dtype(model_dtype=getattr(config, "torch_dtype", None))
 
     if is_torch_npu_available():
         use_jit_compile = os.environ.get("JIT_COMPILE", "0").lower() in ["true", "1"]
         torch.npu.set_compile_mode(jit_compile=use_jit_compile)
 
-    configure_attn_implementation(config, model_args)
+    configure_attn_implementation(config, model_args, is_trainable)
     configure_rope(config, model_args, is_trainable)
     configure_longlora(config, model_args, is_trainable)
     configure_quantization(config, tokenizer, model_args, init_kwargs)
     configure_moe(config, model_args, is_trainable)
     configure_visual_model(config)
+    configure_packing(config, model_args, is_trainable)
 
     if model_args.use_cache and not is_trainable:
         setattr(config, "use_cache", True)
@@ -91,8 +115,8 @@ def patch_config(
 
     # cast data type of the model if:
     # 1. not deepspeed zero3 and not fsdp (keep zero3 or fsdp in float32)
-    # 2. fsdp + qlora
-    if model_args.quantization_bit is not None or (not is_deepspeed_zero3_enabled() and not is_fsdp_enabled()):
+    # 2. quantization_bit is not None (qlora)
+    if (not is_deepspeed_zero3_enabled() and not is_fsdp_enabled()) or model_args.quantization_bit is not None:
         init_kwargs["torch_dtype"] = model_args.compute_dtype
 
         if init_kwargs["low_cpu_mem_usage"]:  # device map requires low_cpu_mem_usage=True
@@ -127,11 +151,9 @@ def patch_model(
     if model_args.resize_vocab:
         resize_embedding_layer(model, tokenizer)
 
-    if model_args.visual_inputs:
-        autocast_projector_dtype(model, model_args)
-
     if is_trainable:
         prepare_model_for_training(model, model_args)
+        autocast_projector_dtype(model, model_args)
         add_z3_leaf_module(model)
 
     if not model_args.use_unsloth:
